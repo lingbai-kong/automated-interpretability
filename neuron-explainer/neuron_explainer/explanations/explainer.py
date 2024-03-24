@@ -124,12 +124,13 @@ class NeuronExplainer(ABC):
         response = await self.client.make_request(**generate_kwargs)
         logger.debug("response in generate_explanations is %s", response)
 
-        if self.prompt_format == PromptFormat.HARMONY_V4:
-            explanations = [x["message"]["content"] for x in response["choices"]]
-        elif self.prompt_format in [PromptFormat.NONE, PromptFormat.INSTRUCTION_FOLLOWING]:
-            explanations = [x["text"] for x in response["choices"]]
-        else:
-            raise ValueError(f"Unhandled prompt format {self.prompt_format}")
+        explanations = response["result"]
+        # if self.prompt_format == PromptFormat.HARMONY_V4:
+        #     explanations = [x["message"]["content"] for x in response["choices"]]
+        # elif self.prompt_format in [PromptFormat.NONE, PromptFormat.INSTRUCTION_FOLLOWING]:
+        #     explanations = [x["text"] for x in response["choices"]]
+        # else:
+        #     raise ValueError(f"Unhandled prompt format {self.prompt_format}")
 
         return self.postprocess_explanations(explanations, prompt_kwargs)
 

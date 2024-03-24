@@ -613,19 +613,22 @@ def _parse_no_logprobs_completion(
     """
     zero_prediction = [0] * len(tokens)
     token_lines = completion.strip("\n").split("༗\n")
+    
     start_line_index = None
     for i, token_line in enumerate(token_lines):
-        if token_line.startswith(f"{tokens[0]}\t"):
+        if f"{tokens[0]}".strip(' ') in token_line:
             start_line_index = i
             break
-
+    if start_line_index!=0:
+        logger.warning("Simulating start line indes is not zero but:", start_line_index)
     # If we didn't find the first token, or if the number of lines in the completion doesn't match
     # the number of tokens, return a list of 0s.
     if start_line_index is None or len(token_lines) - start_line_index != len(tokens):
         return zero_prediction
     predicted_activations = []
     for i, token_line in enumerate(token_lines[start_line_index:]):
-        if not token_line.startswith(f"{tokens[i]}\t"):
+        if f"{tokens[i]}\t".strip(' ') not in token_line:
+            logger.error("Simulating early stop at", token_line)
             return zero_prediction
         predicted_activation = token_line.split("\t")[1]
         if predicted_activation not in VALID_ACTIVATION_TOKENS:
@@ -718,17 +721,19 @@ class LogprobFreeExplanationTokenSimulator(NeuronSimulator):
             self.explanation,
         )
         response = await self.api_client.make_request(
-            prompt=prompt, echo=False, max_tokens=1000
+            messages=prompt, echo=False, max_tokens=1000
         )
-        assert len(response["choices"]) == 1
+        completion = response["result"]
 
-        choice = response["choices"][0]
-        if self.prompt_format == PromptFormat.HARMONY_V4:
-            completion = choice["message"]["content"]
-        elif self.prompt_format in [PromptFormat.NONE, PromptFormat.INSTRUCTION_FOLLOWING]:
-            completion = choice["text"]
-        else:
-            raise ValueError(f"Unhandled prompt format {self.prompt_format}")
+        # assert len(response["choices"]) == 1
+
+        # choice = response["choices"][0]
+        # if self.prompt_format == PromptFormat.HARMONY_V4:
+        #     completion = choice["message"]["content"]
+        # elif self.prompt_format in [PromptFormat.NONE, PromptFormat.INSTRUCTION_FOLLOWING]:
+        #     completion = choice["text"]
+        # else:
+        #     raise ValueError(f"Unhandled prompt format {self.prompt_format}")
 
         predicted_activations = _parse_no_logprobs_completion(completion, tokens)
 
@@ -750,12 +755,12 @@ class LogprobFreeExplanationTokenSimulator(NeuronSimulator):
     ) -> Union[str, list[HarmonyMessage]]:
         """Make a few-shot prompt for predicting the neuron's activations on a sequence."""
         assert explanation != ""
-        prompt_builder = PromptBuilder(allow_extra_system_messages=True)
+        prompt_builder = PromptBuilder()
         prompt_builder.add_message(
             Role.SYSTEM,
-            """We're studying neurons in a neural network. Each neuron looks for some particular thing in a short document. Look at  an explanation of what the neuron does, and try to predict its activations on a particular token.
+            """We're studying neurons in a neural network. Each neuron looks for some particular thing in a short document. Look at an explanation of what the neuron does, and try to predict its activations on a particular token.
 
-The activation format is token<tab>activation, and activations range from 0 to 10. Most activations will be 0.
+The activation format is token<tab>activation, and activations range from 0 to 10. Most activations will be 0 but not all zeros.
 For each sequence, you will see the tokens in the sequence where the activations are left blank. You will print the exact same tokens verbatim, but with the activations filled in according to the explanation.
 """,
         )
@@ -795,4 +800,4 @@ For each sequence, you will see the tokens in the sequence where the activations
             f"Sequence 1 Tokens without Activations:\n{_format_record_for_logprob_free_simulation(ActivationRecord(tokens=tokens, activations=[]), include_activations=False)}\n\n"
             f"Sequence 1 Tokens with Activations:\n",
         )
-        return prompt_builder.build(self.prompt_format)
+        return prompt_builder.build(prompt_format=self.prompt_format,allow_extra_system_messages=True)

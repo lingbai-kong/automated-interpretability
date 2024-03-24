@@ -3,6 +3,7 @@ import contextlib
 import os
 import random
 import traceback
+import json
 from asyncio import Semaphore
 from functools import wraps
 from typing import Any, Callable, Optional
@@ -80,13 +81,12 @@ def exponential_backoff(
     return decorate
 
 
-API_KEY = os.getenv("OPENAI_API_KEY")
+API_KEY = os.getenv("BAIDU_API_KEY")
 assert API_KEY, "Please set the OPENAI_API_KEY environment variable"
 API_HTTP_HEADERS = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer " + API_KEY,
+    "Content-Type": "application/json"
 }
-BASE_API_URL = "https://api.openai.com/v1"
+BASE_API_URL = "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions?access_token="+API_KEY
 
 
 class ApiClient:
@@ -128,9 +128,38 @@ class ApiClient:
             )
             # If the request has a "messages" key, it should be sent to the /chat/completions
             # endpoint. Otherwise, it should be sent to the /completions endpoint.
-            url = BASE_API_URL + ("/chat/completions" if "messages" in kwargs else "/completions")
+            url = BASE_API_URL
             kwargs["model"] = self.model_name
-            response = await http_client.post(url, headers=API_HTTP_HEADERS, json=kwargs)
+            print("original Req:",json.dumps(kwargs))
+            max_output_tokens = kwargs.get("max_tokens",10) if kwargs.get("max_tokens",10)>2 else 1024
+            if "messages" in kwargs:
+                if kwargs.get("messages")[0].get("role")=='system':
+                    system=kwargs.get("messages").pop(0).get("content")
+                else:
+                    system=''
+                message=kwargs.get("messages")
+                data={
+                    "system": system,
+                    "messages": message,
+                    "temperature": kwargs.get("temperature", 0.8),
+                    "top_p": kwargs.get("top_p", 0.8),
+                    "max_output_tokens": max_output_tokens
+                }
+            elif "prompt" in kwargs:
+                 data={
+                    "messages":[
+                        {
+                            "role": "user",
+                            "content": kwargs.get("prompt","hello?")
+                        }
+                    ],
+                    "temperature": kwargs.get("temperature", 0.8),
+                    "top_p": kwargs.get("top_p", 0.8),
+                    "max_output_tokens": max_output_tokens
+                }
+
+            print("Baidu Req:",json.dumps(data))
+            response = await http_client.post(url, json=data)
         # The response json has useful information but the exception doesn't include it, so print it
         # out then reraise.
         try:
